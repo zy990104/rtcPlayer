@@ -17,11 +17,8 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  optimizeDeps: {
-    include: ['h265web.js'],  // 强制 Vite 优化这个依赖
-    noDiscovery: true,
-  },
+  optimizeDeps: {},
 })
