@@ -47,29 +47,60 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, defineProps } from 'vue'
+import { ref, onMounted, watch, nextTick, defineProps, defineEmits } from 'vue'
 
-// Define props
 const props = defineProps({
   videoUrl: String,
 })
 
-// Component state
+const emit = defineEmits()
+
+const container = ref<HTMLDivElement | null>(null)
+const btnDom = ref<HTMLElement | null>(null)
 const playing = ref(false)
-const isNotMute = ref(true)
+const isNotMute = ref(false)
 const fullscreen = ref(false)
 const kBps = ref(0)
-const btnDom = ref<HTMLElement | null>(null)
+const performance = ref('')
 const videoInfo = ref(null)
-const jessibucaPlayer: Record<string, any> = {}
 
-// Get video URL from route params or props
-const paramUrl = decodeURIComponent(props.videoUrl || '' || '')
+let jessibucaPlayer: Record<string, any> = {}
 
-// Create player instance
+onMounted(() => {
+  // let paramUrl = decodeURIComponent(window.location.href.split('?')[1]?.split('=')[1] || '');
+  let paramUrl = 'http://192.168.1.39:8899/rtp/34020000001320000001_34020000001320000001.live.mp4'
+  nextTick(() => {
+    updatePlayerDomSize()
+    window.onresize = () => {
+      updatePlayerDomSize()
+    }
+    if (typeof props.videoUrl === 'undefined') {
+      props.videoUrl = paramUrl
+    }
+    btnDom.value = document.getElementById('buttonsBox')
+  })
+})
+
+watch(
+  () => props.videoUrl,
+  (val) => {
+    nextTick(() => {
+      play(val)
+    })
+  },
+  { immediate: true },
+)
+
+const updatePlayerDomSize = () => {
+  if (container.value) {
+    container.value.width = '700px'
+    container.value.height = '393.75px'
+  }
+}
+
 const create = () => {
   const options = {
-    container: document.querySelector('#container') as HTMLElement,
+    container: container.value,
     autoWasm: true,
     background: '',
     controlAutoHide: false,
@@ -112,90 +143,111 @@ const create = () => {
     wcsUseVideoRender: true,
   }
 
-  jessibucaPlayer[props.videoUrl!] = new window.Jessibuca(options)
+  console.log('Jessibuca -> options: ', options)
+  jessibucaPlayer[container.value?.id ?? ''] = new window.Jessibuca({ ...options })
 
-  const player = jessibucaPlayer[props.videoUrl!]
-
-  player.on('pause', () => (playing.value = false))
-  player.on('play', () => (playing.value = true))
-  player.on('fullscreen', (msg: boolean) => (fullscreen.value = msg))
-  player.on('mute', (msg: boolean) => (isNotMute.value = !msg))
-  player.on('performance', (performance: number) => {
-    let show = '卡顿'
-    if (performance === 2) show = '非常流畅'
-    else if (performance === 1) show = '流畅'
-    console.log('Performance:', show)
+  const jessibuca = jessibucaPlayer[container.value?.id ?? '']
+  jessibuca.on('pause', () => {
+    playing.value = false
   })
-  player.on('kBps', (kBpsValue: number) => (kBps.value = Math.round(kBpsValue)))
+  jessibuca.on('play', () => {
+    playing.value = true
+  })
+  jessibuca.on('fullscreen', (msg: boolean) => {
+    fullscreen.value = msg
+  })
+  jessibuca.on('mute', (msg: boolean) => {
+    isNotMute.value = !msg
+  })
+  jessibuca.on('performance', (performanceValue: number) => {
+    performance.value =
+      performanceValue === 2 ? '非常流畅' : performanceValue === 1 ? '流畅' : '卡顿'
+  })
+  jessibuca.on('kBps', (kBpsValue: number) => {
+    kBps.value = Math.round(kBpsValue)
+  })
+  jessibuca.on('videoInfo', (msg: any) => {
+    console.log('Jessibuca -> videoInfo: ', msg)
+  })
 }
 
-// Play video
+const playBtnClick = () => {
+  play(props.videoUrl)
+}
+
 const play = (url: string) => {
+  url = 'http://192.168.1.39:8899/rtp/34020000001320000001_34020000001320000001.live.mp4'
   if (url) {
-    if (jessibucaPlayer[props.videoUrl!]) {
+    if (jessibucaPlayer[container.value?.id ?? '']) {
       destroy()
     }
     create()
-    const player = jessibucaPlayer[props.videoUrl!]
-    player.on('play', () => {
+    const jessibuca = jessibucaPlayer[container.value?.id ?? '']
+    jessibuca.on('play', () => {
       playing.value = true
     })
-    if (player.hasLoaded()) {
-      player.play(url)
+    if (jessibuca.hasLoaded()) {
+      jessibuca.play(url)
     } else {
-      player.on('load', () => player.play(url))
+      jessibuca.on('load', () => {
+        jessibuca.play(url)
+      })
     }
   }
+  console.log('Jessibuca -> url: ', url)
 }
 
-// Pause video
 const pause = () => {
-  if (jessibucaPlayer[props.videoUrl!]) {
-    jessibucaPlayer[props.videoUrl!].pause()
+  const jessibuca = jessibucaPlayer[container.value?.id ?? '']
+  if (jessibuca) {
+    jessibuca.pause()
   }
   playing.value = false
 }
 
-// Take screenshot
 const screenshot = () => {
-  if (jessibucaPlayer[props.videoUrl!]) {
-    jessibucaPlayer[props.videoUrl!].screenshot()
+  const jessibuca = jessibucaPlayer[container.value?.id ?? '']
+  if (jessibuca) {
+    jessibuca.screenshot()
   }
 }
 
-// Mute video
 const mute = () => {
-  if (jessibucaPlayer[props.videoUrl!]) {
-    jessibucaPlayer[props.videoUrl!].mute()
+  const jessibuca = jessibucaPlayer[container.value?.id ?? '']
+  if (jessibuca) {
+    jessibuca.mute()
   }
 }
 
-// Cancel mute
 const cancelMute = () => {
-  if (jessibucaPlayer[props.videoUrl!]) {
-    jessibucaPlayer[props.videoUrl!].cancelMute()
+  const jessibuca = jessibucaPlayer[container.value?.id ?? '']
+  if (jessibuca) {
+    jessibuca.cancelMute()
   }
 }
 
-// Destroy player instance
 const destroy = () => {
-  const player = jessibucaPlayer[props.videoUrl!]
-  if (player) {
-    player.destroy()
+  const jessibuca = jessibucaPlayer[container.value?.id ?? '']
+  if (jessibuca) {
+    jessibuca.destroy()
   }
+  if (btnDom.value && container.value) {
+    container.value.appendChild(btnDom.value)
+  }
+  jessibucaPlayer[container.value?.id ?? ''] = null
   playing.value = false
-  fullscreen.value = false
 }
 
-// Fullscreen switch
 const fullscreenSwich = () => {
   const isFull = isFullscreen()
-  jessibucaPlayer[props.videoUrl!].setFullscreen(!isFull)
+  const jessibuca = jessibucaPlayer[container.value?.id ?? '']
+  if (jessibuca) {
+    jessibuca.setFullscreen(!isFull)
+  }
   fullscreen.value = !isFull
 }
 
-// Check if in fullscreen mode
-const isFullscreen = (): boolean => {
+const isFullscreen = () => {
   return (
     document.fullscreenElement ||
     document.msFullscreenElement ||
@@ -204,22 +256,9 @@ const isFullscreen = (): boolean => {
     false
   )
 }
-
-// Watch videoUrl change
-watch(
-  () => props.videoUrl,
-  (newVal) => {
-    if (newVal) play(newVal)
-  },
-  { immediate: true },
-)
-
-onMounted(() => {
-  play('')
-})
 </script>
 
-<style>
+<style scoped>
 .buttons-box {
   width: 100%;
   height: 28px;
@@ -245,6 +284,11 @@ onMounted(() => {
 
 .buttons-box-right {
   position: absolute;
-  right: 0;
+  right: 10px;
+}
+
+.buttons-box-left {
+  position: absolute;
+  left: 10px;
 }
 </style>
