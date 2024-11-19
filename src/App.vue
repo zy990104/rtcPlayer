@@ -1,106 +1,226 @@
 <template>
-  <div id="rtcPlayer">
-    <video id="webRtcPlayerBox" controls autoPlay style="text-align:left;">
-      Your browser is too old which doesn't support HTML5 video.
-    </video>
+  <div ref="container" @dblclick="fullscreenSwich"
+       style="width:100%;height:518px; min-height: 200px;background-color: #000000;margin:0 auto;position: relative;">
+    <div class="buttons-box" id="buttonsBox">
+      <div class="buttons-box-left">
+        <i v-if="!playing" class="iconfont icon-play jessibuca-btn" @click="playBtnClick"></i>
+        <i v-if="playing" class="iconfont icon-pause jessibuca-btn" @click="pause"></i>
+        <i class="iconfont icon-stop jessibuca-btn" @click="destroy"></i>
+        <i v-if="isNotMute" class="iconfont icon-audio-high jessibuca-btn" @click="mute()"></i>
+        <i v-if="!isNotMute" class="iconfont icon-audio-mute jessibuca-btn" @click="cancelMute()"></i>
+      </div>
+      <div class="buttons-box-right">
+        <span class="jessibuca-btn">{{ kBps }} kb/s</span>
+        <i class="iconfont icon-camera1196054easyiconnet jessibuca-btn" @click="screenshot"
+           style="font-size: 1rem !important"></i>
+        <i class="iconfont icon-shuaxin11 jessibuca-btn" @click="playBtnClick"></i>
+        <i v-if="!fullscreen" class="iconfont icon-weibiaoti10 jessibuca-btn" @click="fullscreenSwich"></i>
+        <i v-if="fullscreen" class="iconfont icon-weibiaoti11 jessibuca-btn" @click="fullscreenSwich"></i>
+      </div>
+    </div>
   </div>
 </template>
 
-<script lang="ts" setup>
-import { ref, onMounted, watch, defineProps, defineEmits, onBeforeUnmount } from 'vue';
+<script setup lang="ts">
+import { ref, onMounted, watch, defineProps } from 'vue';
 
 // Define props
 const props = defineProps({
-  videoUrl: String,
-  error: String,
-  hasaudio: Boolean
+  videoUrl: String
 });
 
-// Define emits
-const emit = defineEmits<{
-  (event: 'eventcallbacK', type: string, message: string): void;
-}>();
+// Component state
+const playing = ref(false);
+const isNotMute = ref(true);
+const fullscreen = ref(false);
+const kBps = ref(0);
+const btnDom = ref<HTMLElement | null>(null);
+const videoInfo = ref(null);
+const jessibucaPlayer: Record<string, any> = {};
 
-// Declare the RTC player and timer using refs
-const webrtcPlayer = ref<ZLMRTCClient.Endpoint | null>(null);
-const timer = ref<NodeJS.Timeout | null>(null);
+// Get video URL from route params or props
+const paramUrl = decodeURIComponent((props.videoUrl || '') || '');
 
-// Function to initialize and play the video
-const play = (url: string) => {
-  if (webrtcPlayer.value) webrtcPlayer.value.close(); // Close any existing player
-
-  webrtcPlayer.value = new ZLMRTCClient.Endpoint({
-    element: document.getElementById('webRtcPlayerBox'), // video 标签
-    debug: true, // 是否打印日志
-    zlmsdpUrl: url, // 流地址
-    simulecast: false,
-    useCamera: true,
-    audioEnable: true,
-    videoEnable: true,
-    recvOnly: true,
-  });
-
-  webrtcPlayer.value.on(ZLMRTCClient.Events.WEBRTC_ICE_CANDIDATE_ERROR, () => {
-    console.error('ICE 协商出错');
-    emit('eventcallbacK', 'ICE ERROR', 'ICE 协商出错');
-  });
-
-  webrtcPlayer.value.on(ZLMRTCClient.Events.WEBRTC_ON_REMOTE_STREAMS, (e: any) => {
-    console.log('播放成功', e.streams);
-    emit('eventcallbacK', 'playing', '播放成功');
-  });
-
-  webrtcPlayer.value.on(ZLMRTCClient.Events.WEBRTC_OFFER_ANWSER_EXCHANGE_FAILED, (e: any) => {
-    console.error('offer anwser 交换失败', e);
-    emit('eventcallbacK', 'OFFER ANSWER ERROR', 'offer anwser 交换失败');
-    if (e.code === -400 && e.msg === '流不存在') {
-      console.log('流不存在');
-      timer.value = setTimeout(() => {
-        webrtcPlayer.value?.close();
-        play(url);
-      }, 100);
-    }
-  });
-
-  webrtcPlayer.value.on(ZLMRTCClient.Events.WEBRTC_ON_LOCAL_STREAM, () => {
-    emit('eventcallbacK', 'LOCAL STREAM', '获取到了本地流');
-  });
+// Update player DOM size
+const updatePlayerDomSize = () => {
+  const dom = document.querySelector('#container') as HTMLElement;
+  dom.style.width = '700px';
+  dom.style.height = '393.75px';
 };
 
-// Watch for changes to videoUrl prop
-watch(() => props.videoUrl, (newData) => {
-  if (webrtcPlayer.value) {
-    webrtcPlayer.value.close();
+// Create player instance
+const create = () => {
+  const options = {
+    container: document.querySelector('#container') as HTMLElement,
+    autoWasm: true,
+    background: '',
+    controlAutoHide: false,
+    debug: false,
+    decoder: '/js/jessibuca/decoder.js',
+    forceNoOffscreen: false,
+    hasAudio: true,
+    heartTimeout: 5,
+    heartTimeoutReplay: true,
+    heartTimeoutReplayTimes: 3,
+    hiddenAutoPause: false,
+    hotKey: true,
+    isFlv: false,
+    isFullResize: false,
+    isNotMute: isNotMute.value,
+    isResize: false,
+    keepScreenOn: true,
+    loadingText: '请稍等, 视频加载中......',
+    loadingTimeout: 10,
+    loadingTimeoutReplay: true,
+    loadingTimeoutReplayTimes: 3,
+    openWebglAlignment: false,
+    operateBtns: {
+      fullscreen: false,
+      screenshot: false,
+      play: false,
+      audio: false,
+      record: false
+    },
+    recordType: 'mp4',
+    rotate: 0,
+    showBandwidth: false,
+    supportDblclickFullscreen: false,
+    timeout: 10,
+    useMSE: true,
+    useWCS: location.hostname === 'localhost' || location.protocol === 'https:',
+    useWebFullScreen: true,
+    videoBuffer: 0.1,
+    wasmDecodeErrorReplay: true,
+    wcsUseVideoRender: true
+  };
+
+  jessibucaPlayer[props.videoUrl!] = new window.Jessibuca(options);
+
+  const player = jessibucaPlayer[props.videoUrl!];
+
+  player.on('pause', () => playing.value = false);
+  player.on('play', () => playing.value = true);
+  player.on('fullscreen', (msg: boolean) => fullscreen.value = msg);
+  player.on('mute', (msg: boolean) => isNotMute.value = !msg);
+  player.on('performance', (performance: number) => {
+    let show = '卡顿';
+    if (performance === 2) show = '非常流畅';
+    else if (performance === 1) show = '流畅';
+    console.log('Performance:', show);
+  });
+  player.on('kBps', (kBpsValue: number) => kBps.value = Math.round(kBpsValue));
+};
+
+// Play video
+const play = (url: string) => {
+  if (url) {
+    if (jessibucaPlayer[props.videoUrl!]) {
+      destroy();
+    }
+    create();
+    const player = jessibucaPlayer[props.videoUrl!];
+    player.on('play', () => {
+      playing.value = true;
+    });
+    if (player.hasLoaded()) {
+      player.play(url);
+    } else {
+      player.on('load', () => player.play(url));
+    }
   }
-  play(newData);
+};
+
+// Pause video
+const pause = () => {
+  if (jessibucaPlayer[props.videoUrl!]) {
+    jessibucaPlayer[props.videoUrl!].pause();
+  }
+  playing.value = false;
+};
+
+// Take screenshot
+const screenshot = () => {
+  if (jessibucaPlayer[props.videoUrl!]) {
+    jessibucaPlayer[props.videoUrl!].screenshot();
+  }
+};
+
+// Mute video
+const mute = () => {
+  if (jessibucaPlayer[props.videoUrl!]) {
+    jessibucaPlayer[props.videoUrl!].mute();
+  }
+};
+
+// Cancel mute
+const cancelMute = () => {
+  if (jessibucaPlayer[props.videoUrl!]) {
+    jessibucaPlayer[props.videoUrl!].cancelMute();
+  }
+};
+
+// Destroy player instance
+const destroy = () => {
+  const player = jessibucaPlayer[props.videoUrl!];
+  if (player) {
+    player.destroy();
+  }
+  playing.value = false;
+  fullscreen.value = false;
+};
+
+// Fullscreen switch
+const fullscreenSwich = () => {
+  const isFull = isFullscreen();
+  jessibucaPlayer[props.videoUrl!].setFullscreen(!isFull);
+  fullscreen.value = !isFull;
+};
+
+// Check if in fullscreen mode
+const isFullscreen = (): boolean => {
+  return document.fullscreenElement ||
+    document.msFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.webkitFullscreenElement || false;
+};
+
+// Watch videoUrl change
+watch(() => props.videoUrl, (newVal) => {
+  if (newVal) play(newVal);
 }, { immediate: true });
 
-// onMounted lifecycle hook
 onMounted(() => {
-  const paramUrl = decodeURIComponent(props.videoUrl || '');
-  console.log('初始化时的地址为: ', paramUrl);
-  play(paramUrl);
-});
-
-// Cleanup when component is destroyed
-onBeforeUnmount(() => {
-  if (timer.value) {
-    clearTimeout(timer.value);
-  }
-  if (webrtcPlayer.value) {
-    webrtcPlayer.value.close();
-  }
+  updatePlayerDomSize();
+  window.onresize = updatePlayerDomSize;
 });
 </script>
 
-<style scoped>
-#rtcPlayer {
+<style>
+.buttons-box {
   width: 100%;
+  height: 28px;
+  background-color: rgba(43, 51, 63, 0.7);
+  position: absolute;
+  display: flex;
+  left: 0;
+  bottom: 0;
+  user-select: none;
+  z-index: 10;
 }
 
-#webRtcPlayerBox {
-  width: 100%;
-  max-height: 56vh;
-  background-color: #000;
+.jessibuca-btn {
+  width: 20px;
+  color: rgb(255, 255, 255);
+  line-height: 27px;
+  margin: 0px 10px;
+  padding: 0px 2px;
+  cursor: pointer;
+  text-align: center;
+  font-size: 0.8rem !important;
+}
+
+.buttons-box-right {
+  position: absolute;
+  right: 0;
 }
 </style>
